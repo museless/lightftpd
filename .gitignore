@@ -6,6 +6,7 @@
 *.ko
 *.obj
 *.elf
+ftpd
 
 # Linker output
 *.ilk
