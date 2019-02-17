@@ -29,11 +29,18 @@
 #include <errno.h>
 
 
-#define EPOLL_ARR_SIZE  1024
+#define EPOLL_ARR_SIZE      1024
 
-#define USER_INITIALIZE 0
-#define USER_WELCOMED   1
+#define USER_INITIALIZE     0
+#define USER_WELCOMED       1
+#define USER_LOGIN          2
+#define USER_PASSWORD       3
 
+#define ANONYMOUS_USER      "anonymous"
+#define ANONYMOUS_USER_LEN  sizeof(ANONYMOUS_USER)
+
+#define ANONYMOUS_PWD       "anonymous@"
+#define ANONYMOUS_PWD_LEN   sizeof(ANONYMOUS_PWD)
 
 typedef struct sockaddr     saddr_t;
 typedef struct sockaddr_in  sockaddr_t;
@@ -57,5 +64,7 @@ struct ftpservsock {
 struct ftpusersock {
     int32_t fd;
     int32_t stage;
+
+    char    user[32];
 };
 

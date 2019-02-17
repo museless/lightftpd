@@ -11,6 +11,9 @@
 #include "ftpd.h"
 
 
+static bool parse_cmd(const char *data, char *cmd, char *args);
+
+
 int main(int argc, char *argv[])
 {
     printf("Pid: %d\n", getpid());
@@ -46,11 +49,17 @@ int main(int argc, char *argv[])
 
     int32_t     epid = epoll_create(1024), evsize;
     epollev_t   event, eventarr[EPOLL_ARR_SIZE];
-    char        message[] = "220 welcome to use lightftpd ready\r\n";
-    char        error[] = "500 not implemented request\r\n";
+
+    char        message[] = "220 Welcome to use lightftpd ready\r\n";
+    char        error[] = "500 Not implemented request\r\n";
     char        bye[] = "221 Good bye\r\n";
+    char        login[] = "331 Please specify the password\r\n";
+    char        loginsuccess[] = "230 Login successful\r\n";
+
     int32_t     msglen = strlen(message), errlen = strlen(error);
-    int32_t     byelen = strlen(bye);
+    int32_t     byelen = strlen(bye), loginlen = strlen(login);
+    int32_t     successlen = strlen(loginsuccess);
+
     char        databuf[BUFSIZ];
     ftpservs_t  servsock = {ftpsock};
 
@@ -110,25 +119,56 @@ int main(int argc, char *argv[])
                 continue;
             }
 
+            ftpusers_t *so = (ftpusers_t *)eventptr->data.ptr;
+
             if (eventptr->events & EPOLLIN) {
-                if (read(fd, databuf, BUFSIZ) == -1) {
+                int32_t res = read(fd, databuf, BUFSIZ);
+
+                if (res == -1) {
                     if (errno != EAGAIN) {
                         perror("read");
                         return  -1;
                     }
                 }
 
-                if (strncmp(databuf, "QUIT\r\n", 6) == 0) {
-                    write(fd, (const void *)&bye, byelen);
+                if (res != 0) {
+                    char    cmd[32] = {0};
+                    char    args[32] = {0};
 
-                } else {
-                    write(fd, (const void *)&error, errlen);
+                    if (!parse_cmd(databuf, cmd, args)) {
+                        write(fd, (const void *)&error, errlen);
+                        continue;
+                    }
+
+                    if (strncmp(databuf, "QUIT", 4) == 0) {
+                        write(fd, (const void *)&bye, byelen);
+
+                    } else if (strncmp(databuf, "USER", 4) == 0) {
+                        if (!strncmp(args, ANONYMOUS_USER, ANONYMOUS_USER_LEN)) {
+                            so->stage = USER_LOGIN;
+                            write(fd, (const void *)&login, loginlen);
+
+                        } else {
+                            write(fd, (const void *)&error, errlen);
+                            continue;
+                        }
+
+                    } else if (strncmp(databuf, "PASS", 4) == 0) {
+                        const char *passerr = "500 Password error\r\n";
+
+                        if (!strncmp(args, ANONYMOUS_PWD, ANONYMOUS_PWD_LEN)) {
+                            so->stage = USER_PASSWORD;
+                            write(fd, (const void *)&loginsuccess, successlen);
+
+                        } else {
+                            write(fd, (const void *)&passerr, strlen(passerr));
+                            continue;
+                        }
+                    }
                 }
             }
 
             if (eventptr->events & EPOLLOUT) {
-                ftpusers_t *so = (ftpusers_t *)eventptr->data.ptr;
-
                 if (so->stage == USER_INITIALIZE) {
                     write(fd, (const void *)&message, msglen);
                     so->stage = USER_WELCOMED;
@@ -138,5 +178,29 @@ int main(int argc, char *argv[])
     }
 
     return  -1;
+}
+
+
+bool parse_cmd(const char *data, char *cmd, char *args)
+{
+    char   *pcrlf = strstr(data, "\r\n");
+
+    if (!pcrlf) {
+        return  false;
+    }
+
+    char   *penter = strchr(data, (int32_t)' ');
+
+    if (penter) {
+        int32_t cmdlen = penter - data;
+
+        strncpy(cmd, data, cmdlen);
+        strncpy(args, data + cmdlen + 1, pcrlf - penter - 1);
+
+    } else {
+        strncpy(cmd, data, pcrlf - data);
+    }
+
+    return  true;
 }
 
